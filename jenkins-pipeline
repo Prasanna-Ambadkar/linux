@@ -1,0 +1,44 @@
+pipeline {
+    agent {
+        node {
+            label 'ec2-node'
+        }
+    }
+
+    stages {
+        stage('git') {
+            steps {
+            git 'https://github.com/Pritam-Khergade/student-ui.git'
+            }
+        }
+        stage('build') {
+            steps {
+            sh 'mvn clean package'
+            }
+        }
+        stage('push to aws s3') {
+            steps {
+            sh 'mv /home/ec2-user/workspace/pipeline-1/target/studentapp-2.2-SNAPSHOT.war /home/ec2-user/workspace/pipeline-1/target/student-${BUILD_ID}.war'
+            sh 'aws s3 cp /home/ec2-user/workspace/pipeline-1/target/student-${BUILD_ID}.war s3://devops-bucket-prasanna'
+            }
+        }
+        stage('deploy') {
+            steps {
+                withCredentials([sshUserPrivateKey(credentialsId: 'ec2', keyFileVariable: 'import')]) {
+                sh ""
+                echo "Host*ln\tstrinctHostKeychecking no"|sudo tee ~/.ssh/config
+                sh 'ssh -i {import} ec2-user@ >>EOF
+                sudo yum upate -y
+                sudo amazon-linux-extras install java-openjdk11 -y
+                sudo wget https://dlcdn.apache.org/tomcat/tomcat-8/v8.5.82/bin/apache-tomcat-8.5.82.tar.gz
+                sudo tar -xvf apache-tomcat-8.5.82.tar.gz -C /opt
+                sudo chmod 777 /opt/apache-tomcat-8.5.82 && sudo chown ec2-user: /opt/apache-tomcat-8.5.82
+                sudo yum install awscli -y
+                aws s3 cp s3://devops-bucket-prasanna/student-${BUILD_ID}.war /opt/apache-tomcat-8.5.82/webapps/ --recursive
+                sudo ./opt/apache-tomcat-8.5.82/bin/catalina.sh stop
+                sudo ./opt/apache-tomcat-8.5.82/bin/catalina.sh start 
+                }
+            }
+        }
+    }
+}
